@@ -2,7 +2,7 @@
 """
 Buyer's Guide Generator - NVIDIA Edition
 Reads a topic from topics.txt, generates a 600-word buyer's guide via NVIDIA API,
-inserts your Amazon affiliate tag, saves as markdown, and emails to Blogger.
+inserts your Amazon affiliate tag, saves as markdown, and emails clean HTML to Blogger.
 """
 
 import os
@@ -46,10 +46,11 @@ Requirements:
 - Aim for approximately 600 words.
 - Use a helpful, conversational tone.
 - Include practical buying advice and key factors a shopper should consider.
-- Naturally mention specific products and link them using this Amazon affiliate format: https://www.amazon.com/dp/B000000000?tag={AMAZON_TAG}
+- Naturally mention 3-5 specific products with Amazon links using this format: https://www.amazon.com/dp/PRODUCTID?tag={AMAZON_TAG}
+- Use HTML formatting: h2 tags for section headings, p tags for paragraphs, ul/li for lists, strong for bold text.
 - End the article with the exact line: "As an Amazon Associate I earn from qualifying purchases."
-- Format in Markdown with a single H1 heading for the title and H2 subheadings for sections.
-- Output ONLY the article itself. No meta-commentary."""
+- Do NOT wrap the entire article in a code block. Output raw HTML ready to paste.
+- No meta-commentary. Output ONLY the article HTML."""
 
     headers = {
         "Authorization": f"Bearer {NVIDIA_API_KEY}",
@@ -62,7 +63,7 @@ Requirements:
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.7,
-        "max_tokens": 1024
+        "max_tokens": 1500
     }
 
     response = requests.post(NVIDIA_URL, headers=headers, json=data)
@@ -74,9 +75,9 @@ Requirements:
 
     article = response.json()["choices"][0]["message"]["content"].strip()
 
-    disclaimer = "As an Amazon Associate I earn from qualifying purchases."
-    if disclaimer not in article:
-        article += f"\n\n{disclaimer}"
+    disclaimer = '<p><em>As an Amazon Associate I earn from qualifying purchases.</em></p>'
+    if "As an Amazon Associate" not in article:
+        article += f"\n{disclaimer}"
 
     return article
 
@@ -96,19 +97,23 @@ def email_article(article, topic):
         return
 
     today = date.today().strftime("%B %d, %Y")
-    subject = f"Buyer's Guide: {topic} ({today})"
+    subject = f"{topic} ({today})"
 
     msg = MIMEMultipart("alternative")
     msg["From"] = GMAIL_USER
     msg["To"] = BLOGGER_EMAIL
     msg["Subject"] = subject
 
-    plain = article.replace("**", "").replace("## ", "").replace("# ", "")
-    msg.attach(MIMEText(plain, "plain"))
+    # Wrap in clean HTML
+    full_html = f"""<html>
+<head><meta charset="UTF-8"></head>
+<body>
+<h1>{topic}</h1>
+{article}
+</body>
+</html>"""
 
-    html_body = article.replace("\n", "<br>\n")
-    html = f"<html><body>{html_body}</body></html>"
-    msg.attach(MIMEText(html, "html"))
+    msg.attach(MIMEText(full_html, "html", "utf-8"))
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
