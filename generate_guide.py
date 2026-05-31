@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Buyer's Guide Generator - NVIDIA Edition
-Reads a topic from topics.txt, generates a 600-word buyer's guide via NVIDIA API,
-inserts your Amazon affiliate tag, saves as markdown, and emails to Blogger.
+Buyer's Guide Generator
+Reads a topic from topics.txt, generates a 600-word buyer's guide via Google Gemini,
+inserts your Amazon affiliate tag, saves as markdown with today's date, and emails
+it to Blogger via Gmail SMTP.
 """
 
 import os
@@ -12,9 +13,10 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import date
 from pathlib import Path
-import requests
 
-NVIDIA_API_KEY     = os.environ.get("NVIDIA_API_KEY")
+from google import genai
+
+GEMINI_API_KEY     = os.environ.get("GEMINI_API_KEY")
 AMAZON_TAG         = os.environ.get("AMAZON_TAG", "defaulttag-20")
 BLOGGER_EMAIL      = os.environ.get("BLOGGER_EMAIL")
 GMAIL_USER         = os.environ.get("GMAIL_USER")
@@ -22,8 +24,6 @@ GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 
 TOPICS_FILE = Path("topics.txt")
 OUTPUT_DIR  = Path("posts")
-
-NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 
 def read_topic():
@@ -38,6 +38,8 @@ def read_topic():
 
 
 def generate_guide(topic):
+    client = genai.Client(api_key=GEMINI_API_KEY)
+
     prompt = f"""Write a helpful, informative buyer's guide about the following topic.
 
 Topic: {topic}
@@ -46,33 +48,17 @@ Requirements:
 - Aim for approximately 600 words.
 - Use a helpful, conversational tone.
 - Include practical buying advice and key factors a shopper should consider.
-- Naturally mention specific products and link them using this Amazon affiliate format: https://www.amazon.com/dp/B000000000?tag={AMAZON_TAG}
+- Naturally mention specific products and link them using the Amazon affiliate format: https://www.amazon.com/dp/B000000000?tag={AMAZON_TAG}
 - End the article with the exact line: "As an Amazon Associate I earn from qualifying purchases."
 - Format in Markdown with a single H1 heading for the title and H2 subheadings for sections.
 - Output ONLY the article itself. No meta-commentary."""
 
-    headers = {
-        "Authorization": f"Bearer {NVIDIA_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=prompt,
+    )
 
-    data = {
-        "model": "meta/llama-3.3-70b-instruct",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.7,
-        "max_tokens": 1024
-    }
-
-    response = requests.post(NVIDIA_URL, headers=headers, json=data)
-    
-    if response.status_code != 200:
-        print(f"NVIDIA API error: {response.status_code}")
-        print(response.text)
-        sys.exit(1)
-
-    article = response.json()["choices"][0]["message"]["content"].strip()
+    article = response.text.strip()
 
     disclaimer = "As an Amazon Associate I earn from qualifying purchases."
     if disclaimer not in article:
@@ -85,7 +71,7 @@ def save_article(article):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     today = date.today().isoformat()
     filepath = OUTPUT_DIR / f"buyers-guide-{today}.md"
-    filepath.write_text(article, encoding="utf-8")
+    filepath.write_text(article)
     print(f"Saved article to {filepath}")
     return filepath
 
@@ -121,8 +107,8 @@ def email_article(article, topic):
 
 
 def main():
-    if not NVIDIA_API_KEY:
-        print("NVIDIA_API_KEY not set.")
+    if not GEMINI_API_KEY:
+        print("GEMINI_API_KEY not set.")
         sys.exit(1)
 
     topic = read_topic()
